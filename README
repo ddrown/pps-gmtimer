@@ -11,3 +11,8 @@ make ARCH=arm prepare
 make ARCH=arm scripts
 
 get Module.symvers from [todo] and put it in ../linux/
+
+on the BBB:
+make DD-GPS-00A0.dtbo
+cp DD-GPS-00A0.dtbo /lib/firmware/
+add DD-GPS to your list of capes

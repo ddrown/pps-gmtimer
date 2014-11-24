@@ -14,4 +14,7 @@ default:
 clean:
 	$(MAKE) -C $(KDIR) M=$$PWD ARCH=arm clean
 
+DD-GPS-00A0.dtbo: DD-GPS-00A0.dts
+	dtc -@ -I dts -O dtb -o $@ $<
+
 endif
