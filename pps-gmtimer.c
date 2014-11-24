@@ -8,8 +8,6 @@
  * ref5 - linux/drivers/pps/clients/pps-gpio.c
  *
  * required config - CONFIG_OF
- *
- * TODO - power management?
  */
 
 #define MODULE_NAME "pps-gmtimer"
@@ -26,12 +24,14 @@
 #include <linux/interrupt.h>
 #include <linux/device.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/pps_kernel.h>
 
 #include <plat/dmtimer.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Dan Drown");
-MODULE_DESCRIPTION("PPS Client Driver using OMAP Timers");
+MODULE_DESCRIPTION("PPS Client Driver using OMAP Timer hardware");
+MODULE_VERSION("0.1.0");
 
 struct pps_gmtimer_platform_data {
   struct omap_dm_timer *capture_timer;
@@ -39,7 +39,11 @@ struct pps_gmtimer_platform_data {
   uint32_t frequency;
   unsigned int capture;
   unsigned int overflow;
-  unsigned int count_at_capture;
+  unsigned int count_at_interrupt;
+  struct pps_event_time ts;
+  struct timespec delta;
+  struct pps_device *pps;
+  struct pps_source_info info;
 };
 
 /* kobject *******************/
@@ -57,12 +61,26 @@ static ssize_t stats_show(struct device *dev, struct device_attribute *attr, cha
 
 static DEVICE_ATTR(stats, S_IRUGO, stats_show, NULL);
 
-static ssize_t count_at_capture_show(struct device *dev, struct device_attribute *attr, char *buf) {
+static ssize_t interrupt_delta_show(struct device *dev, struct device_attribute *attr, char *buf) {
   struct pps_gmtimer_platform_data *pdata = dev->platform_data;
-  return sprintf(buf, "%u\n", pdata->count_at_capture);
+  return sprintf(buf, "%lld.%09ld\n", (long long)pdata->delta.tv_sec, pdata->delta.tv_nsec);
 }
 
-static DEVICE_ATTR(count_at_capture, S_IRUGO, count_at_capture_show, NULL);
+static DEVICE_ATTR(interrupt_delta, S_IRUGO, interrupt_delta_show, NULL);
+
+static ssize_t pps_ts_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
+  return sprintf(buf, "%lld.%09ld\n", (long long)pdata->ts.ts_real.tv_sec, pdata->ts.ts_real.tv_nsec);
+}
+
+static DEVICE_ATTR(pps_ts, S_IRUGO, pps_ts_show, NULL);
+
+static ssize_t count_at_interrupt_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
+  return sprintf(buf, "%u\n", pdata->count_at_interrupt);
+}
+
+static DEVICE_ATTR(count_at_interrupt, S_IRUGO, count_at_interrupt_show, NULL);
 
 static ssize_t capture_show(struct device *dev, struct device_attribute *attr, char *buf) {
   struct pps_gmtimer_platform_data *pdata = dev->platform_data;
@@ -82,20 +100,6 @@ static ssize_t ctrlstatus_show(struct device *dev, struct device_attribute *attr
 
 static DEVICE_ATTR(ctrlstatus, S_IRUGO, ctrlstatus_show, NULL);
 
-static ssize_t irqenabled_show(struct device *dev, struct device_attribute *attr, char *buf) {
-  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
-  return sprintf(buf, "%x\n", __raw_readl(pdata->capture_timer->irq_ena));
-}
-
-static DEVICE_ATTR(irqenabled, S_IRUGO, irqenabled_show, NULL);
-
-static ssize_t irqstatus_show(struct device *dev, struct device_attribute *attr, char *buf) {
-  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
-  return sprintf(buf, "%x\n", omap_dm_timer_read_status(pdata->capture_timer));
-}
-
-static DEVICE_ATTR(irqstatus, S_IRUGO, irqstatus_show, NULL);
-
 static ssize_t timer_counter_show(struct device *dev, struct device_attribute *attr, char *buf) {
   struct pps_gmtimer_platform_data *pdata = dev->platform_data;
   unsigned int current_count = 0;
@@ -108,11 +112,11 @@ static DEVICE_ATTR(timer_counter, S_IRUGO, timer_counter_show, NULL);
 
 static struct attribute *attrs[] = {
    &dev_attr_timer_counter.attr,
-   &dev_attr_irqstatus.attr,
-   &dev_attr_irqenabled.attr,
    &dev_attr_ctrlstatus.attr,
    &dev_attr_capture.attr,
-   &dev_attr_count_at_capture.attr,
+   &dev_attr_count_at_interrupt.attr,
+   &dev_attr_pps_ts.attr,
+   &dev_attr_interrupt_delta.attr,
    &dev_attr_stats.attr,
    &dev_attr_timer_name.attr,
    NULL,
@@ -133,8 +137,24 @@ static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
 
     irq_status = omap_dm_timer_read_status(pdata->capture_timer);
     if(irq_status & OMAP_TIMER_INT_CAPTURE) {
+      uint32_t ps_per_hz;
+      unsigned int count_at_capture;
+
+      pps_get_ts(&pdata->ts);
+      pdata->count_at_interrupt = omap_dm_timer_read_counter(pdata->capture_timer);
+      count_at_capture = __omap_dm_timer_read(pdata->capture_timer, OMAP_TIMER_CAPTURE_REG, pdata->capture_timer->posted);
+
+      pdata->delta.tv_sec = 0;
+
+      // use picoseconds per hz to avoid floating point and limit the rounding error
+      ps_per_hz = 1000000 / (pdata->frequency / 1000000);
+      pdata->delta.tv_nsec = ((pdata->count_at_interrupt - count_at_capture) * ps_per_hz) / 1000;
+
+      pps_sub_ts(&pdata->ts, pdata->delta);
+      pps_event(pdata->pps, &pdata->ts, PPS_CAPTUREASSERT, NULL);
+
       pdata->capture++;
-      pdata->count_at_capture = omap_dm_timer_read_counter(pdata->capture_timer);
+
       __omap_dm_timer_write_status(pdata->capture_timer, OMAP_TIMER_INT_CAPTURE);
     }
     if(irq_status & OMAP_TIMER_INT_OVERFLOW) {
@@ -293,7 +313,15 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
   if (IS_ERR(pinctrl))
     pr_warning("pins are not configured from the driver\n");
 
-  //TODO: pps
+  pdata->info.mode = PPS_CAPTUREASSERT | PPS_OFFSETASSERT | PPS_ECHOASSERT | PPS_CANWAIT | PPS_TSFMT_TSPEC;
+  pdata->info.owner = THIS_MODULE;
+  snprintf(pdata->info.name, PPS_MAX_NAME_LEN - 1, "%s", pdata->timer_name);
+
+  pdata->pps = pps_register_source(&pdata->info, PPS_CAPTUREASSERT | PPS_OFFSETASSERT);
+  if (pdata->pps == NULL) {
+    pr_err("failed to register %s as PPS source\n", pdata->timer_name);
+  }
+
   return 0;
 }
 
@@ -307,6 +335,10 @@ static int pps_gmtimer_remove(struct platform_device *pdev) {
     pdev->dev.platform_data = NULL;
 
     sysfs_remove_group(&pdev->dev.kobj, &attr_group);
+    if(pdata->pps) {
+      pps_unregister_source(pdata->pps);
+      pdata->pps = NULL;
+    }
   }
 
   platform_set_drvdata(pdev, NULL);
