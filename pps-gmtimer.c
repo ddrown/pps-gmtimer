@@ -12,6 +12,9 @@
  * TODO - power management?
  */
 
+#define MODULE_NAME "pps-gmtimer"
+#define pr_fmt(fmt) MODULE_NAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -22,6 +25,7 @@
 #include <linux/of_device.h>
 #include <linux/interrupt.h>
 #include <linux/device.h>
+#include <linux/pinctrl/consumer.h>
 
 #include <plat/dmtimer.h>
 
@@ -29,14 +33,13 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Dan Drown");
 MODULE_DESCRIPTION("PPS Client Driver using OMAP Timers");
 
-#define MODULE_NAME "pps-gmtimer"
-
 struct pps_gmtimer_platform_data {
   struct omap_dm_timer *capture_timer;
   const char *timer_name;
   uint32_t frequency;
   unsigned int capture;
   unsigned int overflow;
+  unsigned int count_at_capture;
 };
 
 /* kobject *******************/
@@ -54,14 +57,12 @@ static ssize_t stats_show(struct device *dev, struct device_attribute *attr, cha
 
 static DEVICE_ATTR(stats, S_IRUGO, stats_show, NULL);
 
-static ssize_t capture2_show(struct device *dev, struct device_attribute *attr, char *buf) {
+static ssize_t count_at_capture_show(struct device *dev, struct device_attribute *attr, char *buf) {
   struct pps_gmtimer_platform_data *pdata = dev->platform_data;
-  return sprintf(buf, "%u\n",
-      __omap_dm_timer_read(pdata->capture_timer, OMAP_TIMER_CAPTURE2_REG, pdata->capture_timer->posted)
-      );
+  return sprintf(buf, "%u\n", pdata->count_at_capture);
 }
 
-static DEVICE_ATTR(capture2, S_IRUGO, capture2_show, NULL);
+static DEVICE_ATTR(count_at_capture, S_IRUGO, count_at_capture_show, NULL);
 
 static ssize_t capture_show(struct device *dev, struct device_attribute *attr, char *buf) {
   struct pps_gmtimer_platform_data *pdata = dev->platform_data;
@@ -111,7 +112,7 @@ static struct attribute *attrs[] = {
    &dev_attr_irqenabled.attr,
    &dev_attr_ctrlstatus.attr,
    &dev_attr_capture.attr,
-   &dev_attr_capture2.attr,
+   &dev_attr_count_at_capture.attr,
    &dev_attr_stats.attr,
    &dev_attr_timer_name.attr,
    NULL,
@@ -133,6 +134,7 @@ static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
     irq_status = omap_dm_timer_read_status(pdata->capture_timer);
     if(irq_status & OMAP_TIMER_INT_CAPTURE) {
       pdata->capture++;
+      pdata->count_at_capture = omap_dm_timer_read_counter(pdata->capture_timer);
       __omap_dm_timer_write_status(pdata->capture_timer, OMAP_TIMER_INT_CAPTURE);
     }
     if(irq_status & OMAP_TIMER_INT_OVERFLOW) {
@@ -144,38 +146,68 @@ static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
   return IRQ_HANDLED; // TODO: shared interrupts?
 }
 
+static void omap_dm_timer_setup_capture(struct omap_dm_timer *timer) {
+  u32 ctrl;
+  unsigned int interrupt_mask;
+  omap_dm_timer_set_source(timer, OMAP_TIMER_SRC_SYS_CLK);
+  omap_dm_timer_set_prescaler(timer, 0);
+
+  omap_dm_timer_enable(timer);
+
+  ctrl = __omap_dm_timer_read(timer, OMAP_TIMER_CTRL_REG, timer->posted);
+
+  // autoreload
+  ctrl |= OMAP_TIMER_CTRL_AR;
+  __omap_dm_timer_write(timer, OMAP_TIMER_LOAD_REG, 0, timer->posted);
+
+  // start timer
+  ctrl |= OMAP_TIMER_CTRL_ST;
+
+  // set capture
+  ctrl |= OMAP_TIMER_CTRL_TCM_LOWTOHIGH | OMAP_TIMER_CTRL_GPOCFG; // TODO: configurable direction
+
+  __omap_dm_timer_load_start(timer, ctrl, 0, timer->posted);
+
+  /* Save the context */
+  timer->context.tclr = ctrl;
+  timer->context.tldr = 0;
+  timer->context.tcrr = 0;
+
+  interrupt_mask = OMAP_TIMER_INT_CAPTURE|OMAP_TIMER_INT_OVERFLOW;
+  __omap_dm_timer_int_enable(timer, interrupt_mask);
+  timer->context.tier = interrupt_mask;
+  timer->context.twer = interrupt_mask;
+}
+
 static int pps_gmtimer_init_timer(struct device_node *timer_dn, struct pps_gmtimer_platform_data *pdata) {
   unsigned int current_count = 0;
   struct clk *gt_fclk;
 
   of_property_read_string_index(timer_dn, "ti,hwmods", 0, &pdata->timer_name);
   if (!pdata->timer_name) {
-    printk(KERN_ERR MODULE_NAME ": ti,hwmods property missing?\n");
+    pr_err("ti,hwmods property missing?\n");
     return -ENODEV;
   }
 
   pdata->capture_timer = omap_dm_timer_request_by_node(timer_dn);
   if(!pdata->capture_timer) {
-    printk(KERN_ERR MODULE_NAME ": request_by_node failed\n");
+    pr_err("request_by_node failed\n");
     return -ENODEV;
   }
 
   // TODO: use devm_request_irq?
   if(request_irq(pdata->capture_timer->irq, pps_gmtimer_interrupt, IRQF_TIMER, MODULE_NAME, pdata)) {
-    printk(KERN_ERR MODULE_NAME ": cannot register IRQ %d\n", pdata->capture_timer->irq);
+    pr_err("cannot register IRQ %d\n", pdata->capture_timer->irq);
     return -EIO;
   }
 
-  omap_dm_timer_set_source(pdata->capture_timer, OMAP_TIMER_SRC_SYS_CLK);
-  omap_dm_timer_set_prescaler(pdata->capture_timer, 0);
-  omap_dm_timer_set_load_start(pdata->capture_timer, 1, 0);
-
-  __omap_dm_timer_int_enable(pdata->capture_timer, OMAP_TIMER_INT_CAPTURE|OMAP_TIMER_INT_OVERFLOW);
+  omap_dm_timer_setup_capture(pdata->capture_timer);
 
   gt_fclk = omap_dm_timer_get_fclk(pdata->capture_timer);
   pdata->frequency = clk_get_rate(gt_fclk);
+
   current_count = omap_dm_timer_read_counter(pdata->capture_timer);
-  printk(KERN_INFO MODULE_NAME ": timer name=%s cc=%u rate=%u\n", pdata->timer_name, current_count, pdata->frequency);
+  pr_info("timer name=%s cc=%u rate=%u\n", pdata->timer_name, current_count, pdata->frequency);
 
   return 0;
 }
@@ -190,7 +222,7 @@ static void pps_gmtimer_cleanup_timer(struct pps_gmtimer_platform_data *pdata) {
     omap_dm_timer_stop(pdata->capture_timer);
     omap_dm_timer_free(pdata->capture_timer);
     pdata->capture_timer = NULL;
-    printk(KERN_INFO MODULE_NAME ": Exiting. count=%u\n", current_count);
+    pr_info("Exiting. count=%u\n", current_count);
   }
 }
 
@@ -206,13 +238,13 @@ static struct pps_gmtimer_platform_data *of_get_pps_gmtimer_pdata(struct platfor
 
   timer_phandle = of_get_property(np, "timer", NULL);
   if(!timer_phandle) {
-    printk(KERN_ERR MODULE_NAME ": timer property in devicetree null\n");
+    pr_err("timer property in devicetree null\n");
     goto fail;
   }
 
   timer_dn = of_find_node_by_phandle(be32_to_cpup(timer_phandle));
   if(!timer_dn) {
-    printk(KERN_ERR MODULE_NAME ": find_node_by_phandle failed\n");
+    pr_err("find_node_by_phandle failed\n");
     goto fail;
   }
 
@@ -240,23 +272,28 @@ MODULE_DEVICE_TABLE(of, pps_gmtimer_dt_ids);
 static int pps_gmtimer_probe(struct platform_device *pdev) {
   const struct of_device_id *match;
   struct pps_gmtimer_platform_data *pdata;
+  struct pinctrl *pinctrl;
 
   match = of_match_device(pps_gmtimer_dt_ids, &pdev->dev);
   if (match) {
     pdev->dev.platform_data = of_get_pps_gmtimer_pdata(pdev);
   } else {
-    printk(KERN_ERR MODULE_NAME ": of_match_device failed\n");
+    pr_err("of_match_device failed\n");
   }
   pdata = pdev->dev.platform_data;
 
   if(sysfs_create_group(&pdev->dev.kobj, &attr_group)) {
-    printk(KERN_ERR MODULE_NAME ": sysfs_create_group failed\n");
+    pr_err("sysfs_create_group failed\n");
   }
 
   if(!pdata)
     return -ENODEV;
 
-  //TODO: pinctl, pps
+  pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
+  if (IS_ERR(pinctrl))
+    pr_warning("pins are not configured from the driver\n");
+
+  //TODO: pps
   return 0;
 }
 
