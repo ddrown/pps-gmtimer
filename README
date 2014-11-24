@@ -1,4 +1,4 @@
-put kernel source in directory ../linux (needed: commit 8fc7fcb593ac3c5730c8391c2d7db5b87e2d0bf2)
+put kernel source in directory ../linux (beaglebone 3.8.x kernel needs commit 8fc7fcb593ac3c5730c8391c2d7db5b87e2d0bf2)
 
 Install cross compiler:
 (Fedora) sudo yum install gcc-arm-linux-gnu
