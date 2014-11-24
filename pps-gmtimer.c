@@ -16,12 +16,12 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/clk.h>
-#include <linux/kobject.h>
 #include <linux/string.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/interrupt.h>
+#include <linux/device.h>
 
 #include <plat/dmtimer.h>
 
@@ -37,145 +37,89 @@ struct pps_gmtimer_platform_data {
   uint32_t frequency;
   unsigned int capture;
   unsigned int overflow;
-  struct kobject *pps_gmtimer_kobj;
 };
 
-struct pps_gmtimer_platform_data *kobj_pdata = NULL; // TODO: multi-dir kobj
-
 /* kobject *******************/
-static ssize_t timer_name_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf) {
-  if(!kobj_pdata) {
-    return 0;
-  }
-  return sprintf(buf, "%s\n", kobj_pdata->timer_name);
+static ssize_t timer_name_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
+  return sprintf(buf, "%s\n", pdata->timer_name);
 }
 
-static struct kobj_attribute timer_name_attr = __ATTR(timer_name, 0600, timer_name_show, NULL);
+static DEVICE_ATTR(timer_name, S_IRUGO, timer_name_show, NULL);
 
-static ssize_t stats_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf) {
-  if(!kobj_pdata) {
-    return 0;
-  }
-  return sprintf(buf, "capture: %u\noverflow: %u\n", kobj_pdata->capture, kobj_pdata->overflow);
+static ssize_t stats_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
+  return sprintf(buf, "capture: %u\noverflow: %u\n", pdata->capture, pdata->overflow);
 }
 
-static struct kobj_attribute stats_attr = __ATTR(stats, 0600, stats_show, NULL);
+static DEVICE_ATTR(stats, S_IRUGO, stats_show, NULL);
 
-static ssize_t capture2_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf) {
-  if(!kobj_pdata) {
-    return 0;
-  }
+static ssize_t capture2_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
   return sprintf(buf, "%u\n",
-      __omap_dm_timer_read(kobj_pdata->capture_timer, OMAP_TIMER_CAPTURE2_REG, kobj_pdata->capture_timer->posted)
+      __omap_dm_timer_read(pdata->capture_timer, OMAP_TIMER_CAPTURE2_REG, pdata->capture_timer->posted)
       );
 }
 
-static struct kobj_attribute capture2_attr = __ATTR(capture2, 0600, capture2_show, NULL);
+static DEVICE_ATTR(capture2, S_IRUGO, capture2_show, NULL);
 
-static ssize_t capture_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf) {
-  if(!kobj_pdata) {
-    return 0;
-  }
+static ssize_t capture_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
   return sprintf(buf, "%u\n",
-      __omap_dm_timer_read(kobj_pdata->capture_timer, OMAP_TIMER_CAPTURE_REG, kobj_pdata->capture_timer->posted)
+      __omap_dm_timer_read(pdata->capture_timer, OMAP_TIMER_CAPTURE_REG, pdata->capture_timer->posted)
       );
 }
 
-static struct kobj_attribute capture_attr = __ATTR(capture, 0600, capture_show, NULL);
+static DEVICE_ATTR(capture, S_IRUGO, capture_show, NULL);
 
-static ssize_t ctrlstatus_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf) {
-  if(!kobj_pdata) {
-    return 0;
-  }
+static ssize_t ctrlstatus_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
   return sprintf(buf, "%x\n",
-      __omap_dm_timer_read(kobj_pdata->capture_timer, OMAP_TIMER_CTRL_REG, kobj_pdata->capture_timer->posted)
+      __omap_dm_timer_read(pdata->capture_timer, OMAP_TIMER_CTRL_REG, pdata->capture_timer->posted)
       );
 }
 
-static struct kobj_attribute ctrlstatus_attr = __ATTR(ctrlstatus, 0600, ctrlstatus_show, NULL);
+static DEVICE_ATTR(ctrlstatus, S_IRUGO, ctrlstatus_show, NULL);
 
-static ssize_t irqenabled_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf) {
-  if(!kobj_pdata) {
-    return 0;
-  }
-  return sprintf(buf, "%x\n", __raw_readl(kobj_pdata->capture_timer->irq_ena));
+static ssize_t irqenabled_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
+  return sprintf(buf, "%x\n", __raw_readl(pdata->capture_timer->irq_ena));
 }
 
-static struct kobj_attribute irqenabled_attr = __ATTR(irqenabled, 0600, irqenabled_show, NULL);
+static DEVICE_ATTR(irqenabled, S_IRUGO, irqenabled_show, NULL);
 
-static ssize_t irqstatus_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf) {
-  if(!kobj_pdata) {
-    return 0;
-  }
-  return sprintf(buf, "%x\n", omap_dm_timer_read_status(kobj_pdata->capture_timer));
+static ssize_t irqstatus_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
+  return sprintf(buf, "%x\n", omap_dm_timer_read_status(pdata->capture_timer));
 }
 
-static struct kobj_attribute irqstatus_attr = __ATTR(irqstatus, 0600, irqstatus_show, NULL);
+static DEVICE_ATTR(irqstatus, S_IRUGO, irqstatus_show, NULL);
 
-static ssize_t timer_counter_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf) {
+static ssize_t timer_counter_show(struct device *dev, struct device_attribute *attr, char *buf) {
+  struct pps_gmtimer_platform_data *pdata = dev->platform_data;
   unsigned int current_count = 0;
-  if(!kobj_pdata) {
-    return 0;
-  }
 
-  current_count = omap_dm_timer_read_counter(kobj_pdata->capture_timer);
+  current_count = omap_dm_timer_read_counter(pdata->capture_timer);
   return sprintf(buf, "%u\n", current_count);
 }
 
-static struct kobj_attribute timer_counter_attr = __ATTR(timer_counter, 0600, timer_counter_show, NULL);
+static DEVICE_ATTR(timer_counter, S_IRUGO, timer_counter_show, NULL);
 
 static struct attribute *attrs[] = {
-   &timer_counter_attr.attr,
-   &irqstatus_attr.attr,
-   &irqenabled_attr.attr,
-   &ctrlstatus_attr.attr,
-   &capture_attr.attr,
-   &capture2_attr.attr,
-   &stats_attr.attr,
-   &timer_name_attr.attr,
+   &dev_attr_timer_counter.attr,
+   &dev_attr_irqstatus.attr,
+   &dev_attr_irqenabled.attr,
+   &dev_attr_ctrlstatus.attr,
+   &dev_attr_capture.attr,
+   &dev_attr_capture2.attr,
+   &dev_attr_stats.attr,
+   &dev_attr_timer_name.attr,
    NULL,
 };
 
 static struct attribute_group attr_group = {
    .attrs = attrs,
 };
-
-static int pps_gmtimer_init_kobject(struct pps_gmtimer_platform_data *pdata) {
-  int retval;
-
-  if(kobj_pdata) { // only one at a time for now
-    pdata->pps_gmtimer_kobj = NULL;
-    return 0;
-  }
-
-  pdata->pps_gmtimer_kobj = kobject_create_and_add(MODULE_NAME, kernel_kobj);
-  if (!pdata->pps_gmtimer_kobj) {
-    printk(KERN_INFO MODULE_NAME ": kobject_create_and_add failed\n");
-  } else {
-    retval = sysfs_create_group(pdata->pps_gmtimer_kobj, &attr_group);
-    if (retval) {
-      printk(KERN_INFO MODULE_NAME ": sysfs_create_group failed: %d\n", retval);
-      kobject_put(pdata->pps_gmtimer_kobj);
-      pdata->pps_gmtimer_kobj = NULL;
-    } else {
-      kobj_pdata = pdata;
-    }
-  }
-
-  return 0;
-}
-
-static void pps_gmtimer_cleanup_kobject(struct pps_gmtimer_platform_data *pdata) {
-  if(kobj_pdata == pdata) {
-    if(pdata->pps_gmtimer_kobj) {
-      kobject_put(pdata->pps_gmtimer_kobj);
-      pdata->pps_gmtimer_kobj = NULL;
-    } else {
-      printk(KERN_ERR MODULE_NAME ": this device is marked as the kobj, but has a null pps_gmtimer_kobj\n");
-    }
-    kobj_pdata = NULL;
-  }
-}
 
 /* timers ********************/
 static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
@@ -278,10 +222,6 @@ static struct pps_gmtimer_platform_data *of_get_pps_gmtimer_pdata(struct platfor
 
   of_node_put(timer_dn);
 
-  if(pps_gmtimer_init_kobject(pdata) < 0) {
-    goto fail;
-  }
-
   return pdata;
 
 fail2:
@@ -305,9 +245,13 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
   if (match) {
     pdev->dev.platform_data = of_get_pps_gmtimer_pdata(pdev);
   } else {
-    printk(KERN_ERR MODULE_NAME ": of_match_device failed?\n");
+    printk(KERN_ERR MODULE_NAME ": of_match_device failed\n");
   }
   pdata = pdev->dev.platform_data;
+
+  if(sysfs_create_group(&pdev->dev.kobj, &attr_group)) {
+    printk(KERN_ERR MODULE_NAME ": sysfs_create_group failed\n");
+  }
 
   if(!pdata)
     return -ENODEV;
@@ -322,9 +266,10 @@ static int pps_gmtimer_remove(struct platform_device *pdev) {
 
   if(pdata) {
     pps_gmtimer_cleanup_timer(pdata);
-    pps_gmtimer_cleanup_kobject(pdata);
     devm_kfree(&pdev->dev, pdata);
     pdev->dev.platform_data = NULL;
+
+    sysfs_remove_group(&pdev->dev.kobj, &attr_group);
   }
 
   platform_set_drvdata(pdev, NULL);
