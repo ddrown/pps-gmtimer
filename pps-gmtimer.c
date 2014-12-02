@@ -1,13 +1,29 @@
 /*
  * pps-gmtimer.c -- PPS client driver using OMAP Timers
  *
+ * Copyright (C) 2014  Daniel Drown <dan-android@drown.org>
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
  * ref1 - http://www.kunen.org/uC/beagle/omap_dmtimer.html
  * ref2 - [kernel] linux/samples/kobject/kobject-example.c
  * ref3 - [kernel] linux/arch/arm/mach-omap2/timer.c
  * ref4 - am335x trm on ti's website
  * ref5 - linux/drivers/pps/clients/pps-gpio.c
  *
- * required config - CONFIG_OF
+ * required in kernel config - CONFIG_OF
  */
 
 #define MODULE_NAME "pps-gmtimer"

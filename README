@@ -1,18 +1,19 @@
-put kernel source in directory ../linux (beaglebone 3.8.x kernel needs commit 8fc7fcb593ac3c5730c8391c2d7db5b87e2d0bf2)
+put kernel source in directory ../linux
+The official beaglebone 3.8.x kernel needs commit 8fc7fcb593ac3c5730c8391c2d7db5b87e2d0bf2
+You can backport it with the command: git cherry-pick 8fc7fcb593ac3c5730
 
-Install cross compiler:
+To build on an Intel Linux machine, you'll need to install a cross compiler:
 (Fedora) sudo yum install gcc-arm-linux-gnu
 
 in directory ../linux:
 uncompress /proc/config.gz from beaglebone and put it in .config
 modify .config: CONFIG_CROSS_COMPILE="arm-linux-gnu-"
 make ARCH=arm oldconfig
-make ARCH=arm prepare
-make ARCH=arm scripts
-
-get Module.symvers from [todo] and put it in ../linux/
+make ARCH=arm zImage
+make ARCH=arm modules
 
 on the BBB:
+(install zImage and modules)
 make DD-GPS-00A0.dtbo
 cp DD-GPS-00A0.dtbo /lib/firmware/
 add DD-GPS to your list of capes
