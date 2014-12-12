@@ -341,7 +341,12 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
   if (pdata->pps == NULL) {
     pr_err("failed to register %s as PPS source\n", pdata->timer_name);
   } else {
+    // ready to go
     pdata->ready = 1;
+
+    // in case there were interrupts during setup
+    __omap_dm_timer_write_status(pdata->capture_timer, OMAP_TIMER_INT_CAPTURE);
+    __omap_dm_timer_write_status(pdata->capture_timer, OMAP_TIMER_INT_OVERFLOW);
   }
 
   return 0;
