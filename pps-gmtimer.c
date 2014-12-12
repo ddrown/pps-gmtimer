@@ -60,6 +60,7 @@ struct pps_gmtimer_platform_data {
   struct timespec delta;
   struct pps_device *pps;
   struct pps_source_info info;
+  int ready;
 };
 
 /* kobject *******************/
@@ -148,7 +149,7 @@ static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
 
   pdata = data;
 
-  if(pdata->capture_timer) {
+  if(pdata->ready) {
     unsigned int irq_status;
 
     irq_status = omap_dm_timer_read_status(pdata->capture_timer);
@@ -272,6 +273,8 @@ static struct pps_gmtimer_platform_data *of_get_pps_gmtimer_pdata(struct platfor
   if (!pdata)
     return NULL;
 
+  pdata->ready = 0;
+
   timer_phandle = of_get_property(np, "timer", NULL);
   if(!timer_phandle) {
     pr_err("timer property in devicetree null\n");
@@ -317,13 +320,14 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
     pr_err("of_match_device failed\n");
   }
   pdata = pdev->dev.platform_data;
+  if(!pdata)
+    return -ENODEV;
+
+  pdata->ready = 0;
 
   if(sysfs_create_group(&pdev->dev.kobj, &attr_group)) {
     pr_err("sysfs_create_group failed\n");
   }
-
-  if(!pdata)
-    return -ENODEV;
 
   pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
   if (IS_ERR(pinctrl))
@@ -336,6 +340,8 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
   pdata->pps = pps_register_source(&pdata->info, PPS_CAPTUREASSERT | PPS_OFFSETASSERT);
   if (pdata->pps == NULL) {
     pr_err("failed to register %s as PPS source\n", pdata->timer_name);
+  } else {
+    pdata->ready = 1;
   }
 
   return 0;
