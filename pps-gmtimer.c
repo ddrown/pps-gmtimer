@@ -185,7 +185,7 @@ static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
 
 static void omap_dm_timer_setup_capture(struct omap_dm_timer *timer) {
   u32 ctrl;
-  unsigned int interrupt_mask;
+
   omap_dm_timer_set_source(timer, OMAP_TIMER_SRC_SYS_CLK);
   omap_dm_timer_set_prescaler(timer, 0);
 
@@ -209,11 +209,15 @@ static void omap_dm_timer_setup_capture(struct omap_dm_timer *timer) {
   timer->context.tclr = ctrl;
   timer->context.tldr = 0;
   timer->context.tcrr = 0;
+}
+
+static void pps_gmtimer_enable_irq(struct pps_gmtimer_platform_data *pdata) {
+  unsigned int interrupt_mask;
 
   interrupt_mask = OMAP_TIMER_INT_CAPTURE|OMAP_TIMER_INT_OVERFLOW;
-  __omap_dm_timer_int_enable(timer, interrupt_mask);
-  timer->context.tier = interrupt_mask;
-  timer->context.twer = interrupt_mask;
+  __omap_dm_timer_int_enable(pdata->capture_timer, interrupt_mask);
+  pdata->capture_timer->context.tier = interrupt_mask;
+  pdata->capture_timer->context.twer = interrupt_mask;
 }
 
 static int pps_gmtimer_init_timer(struct device_node *timer_dn, struct pps_gmtimer_platform_data *pdata) {
@@ -250,16 +254,13 @@ static int pps_gmtimer_init_timer(struct device_node *timer_dn, struct pps_gmtim
 }
 
 static void pps_gmtimer_cleanup_timer(struct pps_gmtimer_platform_data *pdata) {
-  unsigned int current_count = 0;
-
   if(pdata->capture_timer) {
     omap_dm_timer_set_int_disable(pdata->capture_timer, OMAP_TIMER_INT_CAPTURE|OMAP_TIMER_INT_OVERFLOW);
     free_irq(pdata->capture_timer->irq, pdata);
-    current_count = omap_dm_timer_read_counter(pdata->capture_timer);
     omap_dm_timer_stop(pdata->capture_timer);
     omap_dm_timer_free(pdata->capture_timer);
     pdata->capture_timer = NULL;
-    pr_info("Exiting. count=%u\n", current_count);
+    pr_info("Exiting.\n");
   }
 }
 
@@ -344,9 +345,7 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
     // ready to go
     pdata->ready = 1;
 
-    // in case there were interrupts during setup
-    __omap_dm_timer_write_status(pdata->capture_timer, OMAP_TIMER_INT_CAPTURE);
-    __omap_dm_timer_write_status(pdata->capture_timer, OMAP_TIMER_INT_OVERFLOW);
+    pps_gmtimer_enable_irq(pdata);
   }
 
   return 0;
