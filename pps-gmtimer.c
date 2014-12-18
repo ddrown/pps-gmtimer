@@ -334,11 +334,11 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
   if (IS_ERR(pinctrl))
     pr_warning("pins are not configured from the driver\n");
 
-  pdata->info.mode = PPS_CAPTUREASSERT | PPS_OFFSETASSERT | PPS_ECHOASSERT | PPS_CANWAIT | PPS_TSFMT_TSPEC;
+  pdata->info.mode = PPS_CAPTUREASSERT | PPS_ECHOASSERT | PPS_CANWAIT | PPS_TSFMT_TSPEC;
   pdata->info.owner = THIS_MODULE;
   snprintf(pdata->info.name, PPS_MAX_NAME_LEN - 1, "%s", pdata->timer_name);
 
-  pdata->pps = pps_register_source(&pdata->info, PPS_CAPTUREASSERT | PPS_OFFSETASSERT);
+  pdata->pps = pps_register_source(&pdata->info, PPS_CAPTUREASSERT);
   if (pdata->pps == NULL) {
     pr_err("failed to register %s as PPS source\n", pdata->timer_name);
   } else {
