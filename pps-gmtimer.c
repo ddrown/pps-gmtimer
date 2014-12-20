@@ -41,6 +41,7 @@
 #include <linux/device.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/pps_kernel.h>
+#include <linux/clocksource.h>
 
 #include <plat/dmtimer.h>
 
@@ -61,6 +62,7 @@ struct pps_gmtimer_platform_data {
   struct pps_device *pps;
   struct pps_source_info info;
   int ready;
+  struct clocksource clksrc;
 };
 
 /* kobject *******************/
@@ -186,7 +188,7 @@ static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
 static void omap_dm_timer_setup_capture(struct omap_dm_timer *timer) {
   u32 ctrl;
 
-  omap_dm_timer_set_source(timer, OMAP_TIMER_SRC_SYS_CLK);
+  omap_dm_timer_set_source(timer, OMAP_TIMER_SRC_SYS_CLK); // TODO: configurable clock source
   omap_dm_timer_set_prescaler(timer, 0);
 
   omap_dm_timer_enable(timer);
@@ -261,6 +263,39 @@ static void pps_gmtimer_cleanup_timer(struct pps_gmtimer_platform_data *pdata) {
     omap_dm_timer_free(pdata->capture_timer);
     pdata->capture_timer = NULL;
     pr_info("Exiting.\n");
+  }
+}
+
+/* clocksource ***************/
+static struct pps_gmtimer_platform_data *clocksource_timer = NULL;
+
+static cycle_t pps_gmtimer_read_cycles(struct clocksource *cs) {
+  return (cycle_t)__omap_dm_timer_read_counter(clocksource_timer->capture_timer, clocksource_timer->capture_timer->posted);
+}
+
+static void pps_gmtimer_clocksource_init(struct pps_gmtimer_platform_data *pdata) {
+  if(!clocksource_timer) {
+    pdata->clksrc.name = pdata->timer_name;
+
+    pdata->clksrc.rating = 299;
+    pdata->clksrc.read = pps_gmtimer_read_cycles;
+    pdata->clksrc.mask = CLOCKSOURCE_MASK(32);
+    pdata->clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
+
+    if (clocksource_register_hz(&pdata->clksrc, pdata->frequency))
+      pr_err("Could not register clocksource %s\n", pdata->clksrc.name);
+    else {
+      pr_info("clocksource: %s at %u Hz\n", pdata->clksrc.name, pdata->frequency);
+      clocksource_timer = pdata;
+    }
+  }
+}
+
+static void pps_gmtimer_clocksource_cleanup(struct pps_gmtimer_platform_data *pdata) {
+  // TODO: this isn't enough?
+  if(pdata == clocksource_timer) {
+    clocksource_unregister(&pdata->clksrc);
+    clocksource_timer = NULL;
   }
 }
 
@@ -344,6 +379,7 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
   } else {
     // ready to go
     pdata->ready = 1;
+    pps_gmtimer_clocksource_init(pdata);
 
     pps_gmtimer_enable_irq(pdata);
   }
@@ -356,15 +392,19 @@ static int pps_gmtimer_remove(struct platform_device *pdev) {
   pdata = pdev->dev.platform_data;
 
   if(pdata) {
-    pps_gmtimer_cleanup_timer(pdata);
-    devm_kfree(&pdev->dev, pdata);
-    pdev->dev.platform_data = NULL;
+    pps_gmtimer_clocksource_cleanup(pdata);
 
-    sysfs_remove_group(&pdev->dev.kobj, &attr_group);
+    pps_gmtimer_cleanup_timer(pdata);
+
     if(pdata->pps) {
       pps_unregister_source(pdata->pps);
       pdata->pps = NULL;
     }
+
+    devm_kfree(&pdev->dev, pdata);
+    pdev->dev.platform_data = NULL;
+
+    sysfs_remove_group(&pdev->dev.kobj, &attr_group);
   }
 
   platform_set_drvdata(pdev, NULL);

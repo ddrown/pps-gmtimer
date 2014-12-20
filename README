@@ -8,12 +8,17 @@ To build on an Intel Linux machine, you'll need to install a cross compiler:
 in directory ../linux:
 uncompress /proc/config.gz from beaglebone and put it in .config
 modify .config: CONFIG_CROSS_COMPILE="arm-linux-gnu-"
-make ARCH=arm oldconfig
-make ARCH=arm zImage
-make ARCH=arm modules
+	make ARCH=arm oldconfig
+	make ARCH=arm zImage
+	make ARCH=arm modules
 
 on the BBB:
 (install zImage and modules)
-make DD-GPS-00A0.dtbo
-cp DD-GPS-00A0.dtbo /lib/firmware/
-add DD-GPS to your list of capes
+	make DD-GPS-00A0.dtbo
+	cp DD-GPS-00A0.dtbo /lib/firmware/
+	add DD-GPS to your list of capes
+
+
+note: there's currently a bug with clocksources when removing the module.
+As a workaround, before using rmmod, switch back to the default clocksource:
+	echo gp_timer > /sys/devices/system/clocksource/clocksource0/current_clocksource
