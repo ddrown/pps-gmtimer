@@ -282,11 +282,12 @@ static void pps_gmtimer_clocksource_init(struct pps_gmtimer_platform_data *pdata
     pdata->clksrc.mask = CLOCKSOURCE_MASK(32);
     pdata->clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
 
-    if (clocksource_register_hz(&pdata->clksrc, pdata->frequency))
+    clocksource_timer = pdata;
+    if (clocksource_register_hz(&pdata->clksrc, pdata->frequency)) {
       pr_err("Could not register clocksource %s\n", pdata->clksrc.name);
-    else {
+      clocksource_timer = NULL;
+    } else {
       pr_info("clocksource: %s at %u Hz\n", pdata->clksrc.name, pdata->frequency);
-      clocksource_timer = pdata;
     }
   }
 }
