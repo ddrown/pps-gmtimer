@@ -17,4 +17,7 @@ clean:
 DD-GPS-00A0.dtbo: DD-GPS-00A0.dts
 	dtc -@ -I dts -O dtb -o $@ $<
 
+DD-GPS-TCLKIN-00A0.dtbo: DD-GPS-TCLKIN-00A0.dts
+	dtc -@ -I dts -O dtb -o $@ $<
+
 endif

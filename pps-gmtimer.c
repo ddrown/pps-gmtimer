@@ -166,7 +166,7 @@ static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
       pdata->delta.tv_sec = 0;
 
       // use picoseconds per hz to avoid floating point and limit the rounding error
-      ps_per_hz = 1000000 / (pdata->frequency / 1000000);
+      ps_per_hz = 1000000000 / (pdata->frequency / 1000);
       pdata->delta.tv_nsec = ((pdata->count_at_interrupt - count_at_capture) * ps_per_hz) / 1000;
 
       pps_sub_ts(&pdata->ts, pdata->delta);
@@ -188,7 +188,7 @@ static irqreturn_t pps_gmtimer_interrupt(int irq, void *data) {
 static void omap_dm_timer_setup_capture(struct omap_dm_timer *timer) {
   u32 ctrl;
 
-  omap_dm_timer_set_source(timer, OMAP_TIMER_SRC_SYS_CLK); // TODO: configurable clock source
+  omap_dm_timer_set_source(timer, OMAP_TIMER_SRC_SYS_CLK);
   omap_dm_timer_set_prescaler(timer, 0);
 
   omap_dm_timer_enable(timer);
@@ -213,6 +213,18 @@ static void omap_dm_timer_setup_capture(struct omap_dm_timer *timer) {
   timer->context.tcrr = 0;
 }
 
+/* if tclkin has no clock, writes to the timer registers will stall and you will get a message like:
+ * Unhandled fault: external abort on non-linefetch (0x1028) at 0xfa044048
+ */
+static void omap_dm_timer_use_tclkin(struct pps_gmtimer_platform_data *pdata) {
+  struct clk *gt_fclk;
+
+  omap_dm_timer_set_source(pdata->capture_timer, OMAP_TIMER_SRC_EXT_CLK);
+  gt_fclk = omap_dm_timer_get_fclk(pdata->capture_timer);
+  pdata->frequency = clk_get_rate(gt_fclk);
+  pr_info("timer(%s) switched to tclkin, rate=%uHz\n", pdata->timer_name, pdata->frequency);
+}
+
 static void pps_gmtimer_enable_irq(struct pps_gmtimer_platform_data *pdata) {
   unsigned int interrupt_mask;
 
@@ -223,7 +235,6 @@ static void pps_gmtimer_enable_irq(struct pps_gmtimer_platform_data *pdata) {
 }
 
 static int pps_gmtimer_init_timer(struct device_node *timer_dn, struct pps_gmtimer_platform_data *pdata) {
-  unsigned int current_count = 0;
   struct clk *gt_fclk;
 
   of_property_read_string_index(timer_dn, "ti,hwmods", 0, &pdata->timer_name);
@@ -249,8 +260,7 @@ static int pps_gmtimer_init_timer(struct device_node *timer_dn, struct pps_gmtim
   gt_fclk = omap_dm_timer_get_fclk(pdata->capture_timer);
   pdata->frequency = clk_get_rate(gt_fclk);
 
-  current_count = omap_dm_timer_read_counter(pdata->capture_timer);
-  pr_info("timer name=%s cc=%u rate=%u\n", pdata->timer_name, current_count, pdata->frequency);
+  pr_info("timer name=%s rate=%uHz\n", pdata->timer_name, pdata->frequency);
 
   return 0;
 }
@@ -293,7 +303,6 @@ static void pps_gmtimer_clocksource_init(struct pps_gmtimer_platform_data *pdata
 }
 
 static void pps_gmtimer_clocksource_cleanup(struct pps_gmtimer_platform_data *pdata) {
-  // TODO: this isn't enough?
   if(pdata == clocksource_timer) {
     clocksource_unregister(&pdata->clksrc);
     clocksource_timer = NULL;
@@ -349,6 +358,7 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
   const struct of_device_id *match;
   struct pps_gmtimer_platform_data *pdata;
   struct pinctrl *pinctrl;
+  const __be32 *use_tclkin;
 
   match = of_match_device(pps_gmtimer_dt_ids, &pdev->dev);
   if (match) {
@@ -369,6 +379,13 @@ static int pps_gmtimer_probe(struct platform_device *pdev) {
   pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
   if (IS_ERR(pinctrl))
     pr_warning("pins are not configured from the driver\n");
+
+  use_tclkin = of_get_property(pdev->dev.of_node, "use-tclkin", NULL);
+  if(use_tclkin && be32_to_cpup(use_tclkin) == 1) {
+    omap_dm_timer_use_tclkin(pdata);
+  } else {
+    pr_info("using system clock\n");
+  }
 
   pdata->info.mode = PPS_CAPTUREASSERT | PPS_ECHOASSERT | PPS_CANWAIT | PPS_TSFMT_TSPEC;
   pdata->info.owner = THIS_MODULE;
