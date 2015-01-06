@@ -8,15 +8,18 @@ To build on an Intel Linux machine, you'll need to install a cross compiler:
 in directory ../linux:
 uncompress /proc/config.gz from beaglebone and put it in .config
 modify .config: CONFIG_CROSS_COMPILE="arm-linux-gnu-"
+
 	make ARCH=arm oldconfig
 	make ARCH=arm zImage
 	make ARCH=arm modules
 
 on the BBB:
 (install zImage and modules)
+
 	make DD-GPS-00A0.dtbo
 	cp DD-GPS-00A0.dtbo /lib/firmware/
-	add DD-GPS to your list of capes
+
+Then, add DD-GPS to your list of capes
 
 
 
@@ -25,3 +28,13 @@ kernel-tclkin.patch to your kernel.  If you're not using a 24MHz clock, update
 the DEFINE_CLK_FIXED_RATE tclkin_ck definition in
 arch/arm/mach-omap2/cclock33xx_data.c  Use the dts file
 DD-GPS-TCLKIN-00A0.dts, which has the pinctl changes needed
+
+To use this clock as your system time source:
+
+	echo timer4 > /sys/devices/system/clocksource/clocksource0/current_clocksource
+
+If you're not using timer4, use its name in place.
+
+To switch back to the default time source:
+
+	echo gp_timer > /sys/devices/system/clocksource/clocksource0/current_clocksource
