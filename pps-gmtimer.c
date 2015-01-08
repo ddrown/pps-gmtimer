@@ -269,6 +269,7 @@ static int pps_gmtimer_init_timer(struct device_node *timer_dn, struct pps_gmtim
 
 static void pps_gmtimer_cleanup_timer(struct pps_gmtimer_platform_data *pdata) {
   if(pdata->capture_timer) {
+    omap_dm_timer_set_source(pdata->capture_timer, OMAP_TIMER_SRC_SYS_CLK); // in case TCLKIN is stopped during boot
     omap_dm_timer_set_int_disable(pdata->capture_timer, OMAP_TIMER_INT_CAPTURE|OMAP_TIMER_INT_OVERFLOW);
     free_irq(pdata->capture_timer->irq, pdata);
     omap_dm_timer_stop(pdata->capture_timer);
