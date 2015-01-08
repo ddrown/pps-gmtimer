@@ -189,11 +189,13 @@ static void omap_dm_timer_setup_capture(struct omap_dm_timer *timer) {
   u32 ctrl;
 
   omap_dm_timer_set_source(timer, OMAP_TIMER_SRC_SYS_CLK);
-  omap_dm_timer_set_prescaler(timer, 0);
 
   omap_dm_timer_enable(timer);
 
   ctrl = __omap_dm_timer_read(timer, OMAP_TIMER_CTRL_REG, timer->posted);
+
+  // disable prescaler
+  ctrl &= ~(OMAP_TIMER_CTRL_PRE | (0x07 << 2));
 
   // autoreload
   ctrl |= OMAP_TIMER_CTRL_AR;
