@@ -12,10 +12,9 @@ Building the kernel
  * uncompress /proc/config.gz from beaglebone and put it in linux/.config
  * modify .config: CONFIG\_CROSS\_COMPILE="arm-linux-gnu-"
 
-	make ARCH=arm oldconfig
-	make ARCH=arm zImage
-	make ARCH=arm modules
-
+> make ARCH=arm oldconfig
+> make ARCH=arm zImage
+> make ARCH=arm modules
 
 Building the module
 -------------------
@@ -48,13 +47,13 @@ To use an external clock source on pin P9.41 (TCLKIN).  It accepts up to a 24MHz
 
 To use this clock as your system time source:
 
-	echo timer4 > /sys/devices/system/clocksource/clocksource0/current_clocksource
+> echo timer4 > /sys/devices/system/clocksource/clocksource0/current\_clocksource
 
 If you're not using the timer4 hardware, use the other timer's name in place.
 
 To switch back to the default time source:
 
-	echo gp_timer > /sys/devices/system/clocksource/clocksource0/current_clocksource
+> echo gp\_timer > /sys/devices/system/clocksource/clocksource0/current\_clocksource
 
 
 Monitoring operation
