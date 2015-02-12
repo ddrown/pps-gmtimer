@@ -1,0 +1,80 @@
+#!/usr/bin/perl
+
+use strict;
+use Time::HiRes qw(gettimeofday usleep);
+use Math::BigFloat;
+
+$| = 1;
+
+# reads a file, returns a string
+sub r {
+  my($filename) = @_;
+  open(F,"<",$filename); 
+  my $r = <F>;
+  close(F);
+  chomp($r);
+  return $r;
+}
+# reads a file, returns a BigFloat (which can handle a full timestamp with ns precision)
+sub f {
+  my($filename) = @_;
+  return Math::BigFloat->new(r($filename));
+}
+
+if(not -f "count_at_interrupt") {
+  die("run me from the /sys/devices/ocp.3/pps_gmtimer.* directory\n");
+}
+
+my $seconds = 0;
+my $format = "%d";
+if($ARGV[0] > 1) { # optional argument: seconds to wait between updates, default 1
+  $seconds = $ARGV[0] - 1;
+  $format = "%0.2f";
+}
+
+my $last = 0;
+while(1) {
+  my $cap = r("capture"); 
+  my $cac = r("count_at_interrupt"); 
+  my $pps = f("pps_ts");
+  my $i_d = r("interrupt_delta");
+
+  my $delay = $pps - $pps->as_int();
+  if($delay > 0.9) { # is the local clock ahead of the PPS?
+    $delay -= 1;
+  }
+
+  my $diff = $cap - $last;
+  if($diff < 0) { # on counter wrap
+    $diff += 2**32;
+  }
+  if($seconds > 0) { # average out the counter difference when it's measured for more than 1 second
+    $diff = $diff / ($seconds + 1);
+  }
+
+  # columns: pps timestamp, capture counter difference, cycles between capture and interrupt, interrupt delay, raw capture value, clock offset
+  printf("%1.3f $format %d %1.9f %d %1.9f",$pps, $diff, $cac-$cap,$i_d,$cap,$delay);
+  if($seconds > 0) {
+    # if we're measuring more than one second: print ppm
+    printf(" %1.3f\n",($diff-24000000)/24);
+  } else {
+    print "\n";
+  }
+  $last = $cap;
+ 
+  # calculate when the next PPS should happen
+  my(@now) = gettimeofday();
+  my $next = 1000000 - $now[1];
+  if($pps =~ /\.([0-9]{6})/) {
+    $next = $1 - $now[1];
+    if($next < 0) {
+      $next += 1000000;
+    }
+  }
+  if($seconds > 0) {
+    $next += $seconds * 1000000;
+  }
+
+  # sleep till ~20ms after when the PPS should happen
+  usleep($next + 20000); 
+}
