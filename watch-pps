@@ -31,7 +31,8 @@ if (! -f 'count_at_interrupt') {
 
 my $seconds = 0;
 my $format = "%d";
-if($ARGV[0] > 1) { # optional argument: seconds to wait between updates, default 1
+if(defined($ARGV[0]) && ($ARGV[0] > 1)) { 
+  # optional argument: seconds to wait between updates, default 1
   $seconds = $ARGV[0] - 1;
   $format = "%0.2f";
 }
