@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 
 use strict;
 use Time::HiRes qw(gettimeofday usleep);
@@ -21,9 +21,13 @@ sub f {
   return Math::BigFloat->new(r($filename));
 }
 
-if(not -f "count_at_interrupt") {
-  die("run me from the /sys/devices/ocp.3/pps_gmtimer.* directory\n");
-}
+# check if already in the sysfs directory
+if (! -f 'count_at_interrupt') {
+    # if not, try and chdir to the directory
+    my($sysdir) = '/sys/devices/platform/ocp/ocp:pps_gmtimer';
+    chdir($sysdir) ||
+        die("Unable to change directory to $sysdir");
+}    
 
 my $seconds = 0;
 my $format = "%d";

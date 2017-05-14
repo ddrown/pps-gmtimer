@@ -58,7 +58,7 @@ struct pps_gmtimer_platform_data {
   unsigned int overflow;
   unsigned int count_at_interrupt;
   struct pps_event_time ts;
-  struct timespec delta;
+  struct timespec64 delta;
   struct pps_device *pps;
   struct pps_source_info info;
   int ready;
@@ -282,8 +282,8 @@ static void pps_gmtimer_cleanup_timer(struct pps_gmtimer_platform_data *pdata) {
 /* clocksource ***************/
 static struct pps_gmtimer_platform_data *clocksource_timer = NULL;
 
-static cycle_t pps_gmtimer_read_cycles(struct clocksource *cs) {
-  return (cycle_t)__omap_dm_timer_read_counter(clocksource_timer->capture_timer, clocksource_timer->capture_timer->posted);
+static u64 pps_gmtimer_read_cycles(struct clocksource *cs) {
+  return (u64)__omap_dm_timer_read_counter(clocksource_timer->capture_timer, clocksource_timer->capture_timer->posted);
 }
 
 static void pps_gmtimer_clocksource_init(struct pps_gmtimer_platform_data *pdata) {
