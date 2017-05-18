@@ -50,7 +50,7 @@
         };
 
 	fragment@1 {
-                target = <&uart4>;	/* 1-based counting */
+                target = <&uart4>;	/* 0-based counting */
                 __overlay__ {
                         status = "okay";
                         pinctrl-names = "default";
